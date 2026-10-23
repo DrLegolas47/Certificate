@@ -1,64 +1,101 @@
 /**
- * GCS Certificate Portal - Complex Table Data Engine
- * Handles Option B delimited text format <-> JSON <-> HTML rendering
+ * GCS Certificate Portal - Complex Table & Schedule Data Engine
+ * Handles Option B delimited text format <-> Multiline Tables <-> Formatted Schedule Blocks <-> JSON <-> HTML rendering
  */
 
 export const tableEngine = {
   /**
-   * Parse Option B delimited text into JSON object
-   * Format: "Col1 | Col2 | Col3 ; R1C1 | R1C2 | R1C3 ; R2C1 | R2C2 | R2C3"
+   * Parse input text into a structured table or schedule block object
    */
   parseDelimited(rawText) {
     if (!rawText || typeof rawText !== 'string') return null;
     const clean = rawText.trim();
     if (!clean) return null;
 
-    // If it's already a JSON string, try parsing it directly
+    // 1. If it's already a JSON string
     if (clean.startsWith('{') && clean.endsWith('}')) {
       try {
         const obj = JSON.parse(clean);
-        if (Array.isArray(obj.columns) && Array.isArray(obj.rows)) return obj;
+        if (obj.textBlock) return obj;
+        if (Array.isArray(obj.columns)) {
+          // If columns exist but rows is empty, treat as formatted schedule block
+          if (!Array.isArray(obj.rows) || obj.rows.length === 0) {
+            return { textBlock: obj.columns.join(' ') };
+          }
+          return obj;
+        }
       } catch (e) {
-        // Fallback to delimited parsing
+        // Fallback to text parsing
       }
     }
 
-    const segments = clean.split(';').map(s => s.trim()).filter(Boolean);
+    // 2. Check for multiline table (newline delimited with | or tabs)
+    let segments = [];
+    if (clean.includes('\n')) {
+      segments = clean.split(/\r?\n/).map(s => s.trim()).filter(Boolean);
+    } else if (clean.includes(';')) {
+      segments = clean.split(';').map(s => s.trim()).filter(Boolean);
+    } else {
+      segments = [clean];
+    }
+
     if (segments.length === 0) return null;
 
-    // First segment is column headers
-    const columns = segments[0].split('|').map(c => c.trim()).filter(Boolean);
-    if (columns.length === 0) return null;
+    // Check if the lines look like a structured table (contains | or \t)
+    const hasPipesOrTabs = segments.some(s => s.includes('|') || s.includes('\t'));
 
-    // Remaining segments are row items
+    if (!hasPipesOrTabs) {
+      // It's a freeform text schedule / posting block (e.g. Experience Certificate paragraph)
+      return { textBlock: clean };
+    }
+
+    // Parse as table
+    const splitRow = line => {
+      if (line.includes('|')) return line.split('|').map(c => c.trim());
+      if (line.includes('\t')) return line.split('\t').map(c => c.trim());
+      return [line.trim()];
+    };
+
+    const columns = splitRow(segments[0]).filter(Boolean);
+    if (columns.length === 0) return { textBlock: clean };
+
     const rows = [];
     for (let i = 1; i < segments.length; i++) {
-      const rowItems = segments[i].split('|').map(item => item.trim());
-      // Ensure row has same column count (pad with empty string if short)
+      const rowItems = splitRow(segments[i]);
       while (rowItems.length < columns.length) {
         rowItems.push('');
       }
       rows.push(rowItems.slice(0, columns.length));
     }
 
-    return {
-      columns,
-      rows
-    };
+    if (rows.length === 0) {
+      // Single line entered without row separator
+      return { textBlock: segments[0] };
+    }
+
+    return { columns, rows };
   },
 
   /**
-   * Convert JSON object to Option B delimited string
+   * Convert JSON object back to editable string for textarea
    */
   toDelimited(tableObj) {
-    if (!tableObj || !Array.isArray(tableObj.columns) || !Array.isArray(tableObj.rows)) return '';
-    const headerStr = tableObj.columns.join(' | ');
-    const rowStrs = tableObj.rows.map(r => r.join(' | '));
-    return [headerStr, ...rowStrs].join(' ; ');
+    if (!tableObj) return '';
+    if (typeof tableObj === 'string') return tableObj;
+    if (tableObj.textBlock) return tableObj.textBlock;
+    if (Array.isArray(tableObj.columns) && (!Array.isArray(tableObj.rows) || tableObj.rows.length === 0)) {
+      return tableObj.columns.join(' | ');
+    }
+    if (Array.isArray(tableObj.columns) && Array.isArray(tableObj.rows)) {
+      const headerStr = tableObj.columns.join(' | ');
+      const rowStrs = tableObj.rows.map(r => r.join(' | '));
+      return [headerStr, ...rowStrs].join(' ;\n');
+    }
+    return '';
   },
 
   /**
-   * Safely stringify table object for Google Sheet single-cell storage
+   * Safely stringify table object for D1 and Google Sheets storage
    */
   stringifyForStorage(tableInput) {
     if (!tableInput) return '';
@@ -70,46 +107,65 @@ export const tableEngine = {
   },
 
   /**
-   * Render HTML Neumorphic Table for Public Verification or Preview
+   * Render HTML for Public Verification Page or Preview
    */
   renderHtml(tableData) {
     if (!tableData) return '';
     let parsed = null;
 
-    if (typeof tableData === 'object' && Array.isArray(tableData.columns)) {
+    if (typeof tableData === 'object') {
       parsed = tableData;
     } else if (typeof tableData === 'string') {
       parsed = this.parseDelimited(tableData);
     }
 
-    if (!parsed || !parsed.columns || parsed.columns.length === 0 || !parsed.rows || parsed.rows.length === 0) {
-      return '';
-    }
+    if (!parsed) return '';
 
     const esc = s => String(s ?? '').replace(/[&<>"']/g, m => ({
       '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;'
     }[m]));
 
-    const headerHtml = parsed.columns.map(c => `<th>${esc(c)}</th>`).join('');
-    const rowsHtml = parsed.rows.map(row => {
-      const cells = row.map(cell => `<td>${esc(cell)}</td>`).join('');
-      return `<tr>${cells}</tr>`;
-    }).join('');
+    // Format A: Structured Multi-column Table
+    if (Array.isArray(parsed.columns) && Array.isArray(parsed.rows) && parsed.rows.length > 0) {
+      const headerHtml = parsed.columns.map(c => `<th>${esc(c)}</th>`).join('');
+      const rowsHtml = parsed.rows.map(row => {
+        const cells = row.map(cell => `<td>${esc(cell)}</td>`).join('');
+        return `<tr>${cells}</tr>`;
+      }).join('');
 
-    return `
-      <div class="verify-field" style="border-bottom: none; margin-top: 14px;">
-        <div class="verify-label">Schedule &amp; Departmental Posting Records</div>
-        <div class="neu-table-wrap" style="margin-top: 8px;">
-          <table class="neu-table">
-            <thead>
-              <tr>${headerHtml}</tr>
-            </thead>
-            <tbody>
-              ${rowsHtml}
-            </tbody>
-          </table>
+      return `
+        <div class="verify-field" style="border-bottom: none; margin-top: 14px;">
+          <div class="verify-label">Schedule &amp; Departmental Posting Records</div>
+          <div class="neu-table-wrap" style="margin-top: 8px;">
+            <table class="neu-table">
+              <thead>
+                <tr>${headerHtml}</tr>
+              </thead>
+              <tbody>
+                ${rowsHtml}
+              </tbody>
+            </table>
+          </div>
         </div>
-      </div>
-    `;
+      `;
+    }
+
+    // Format B: Text Schedule / Posting Details Block
+    const textContent = parsed.textBlock ||
+      (Array.isArray(parsed.columns) ? parsed.columns.join(' ') : '') ||
+      (typeof tableData === 'string' && !tableData.startsWith('{') ? tableData : '');
+
+    if (textContent && textContent.trim()) {
+      return `
+        <div class="verify-field" style="border-bottom: none; margin-top: 14px;">
+          <div class="verify-label">Schedule &amp; Posting Details</div>
+          <div class="neu-panel" style="margin-top: 8px; padding: 14px 16px; font-size: 13.5px; line-height: 1.6; color: var(--ink); white-space: pre-wrap; background: rgba(0, 102, 153, 0.03); border-left: 3px solid var(--brand); border-radius: 6px;">
+            ${esc(textContent.trim())}
+          </div>
+        </div>
+      `;
+    }
+
+    return '';
   }
 };
