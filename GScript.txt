@@ -1,0 +1,93 @@
+/**
+ * GCSMC Certificate Verification — Apps Script backend
+ * (year-tab routing + CertificateType/Description fields)
+ *
+ * SETUP
+ * 1. In your Google Sheet, create one tab PER YEAR, named with the full
+ *    year: "2026", "2027", etc. Each tab needs these columns in row 1:
+ *       ID | Name | CertificateType | DateIssued | Description | Status
+ *
+ *    Example row in tab "2026":
+ *    ID           Name          CertificateType   DateIssued   Description                 Status
+ *    26hDrj3m3Pu  Rohan Mehta   B.Sc. Nursing     2026-06-15   2026 Batch, First Division   Valid
+ *
+ *    Status accepts Valid / Invalid / Revoked / "Not Valid" (normalized
+ *    below) so you don't have to be exact when editing by hand.
+ *
+ * 2. IDs must start with the 2-digit year they were issued in ("26" for
+ *    2026), because that prefix is what routes the lookup to the right
+ *    tab. generate_certificates.py already does this for you.
+ *
+ * 3. Extensions > Apps Script, paste this file in as Code.gs.
+ * 4. Deploy > New deployment > type "Web app".
+ *      - Execute as: Me
+ *      - Who has access: Anyone
+ * 5. Copy the resulting /exec URL — paste it into verify.html.
+ * 6. Re-deploy (Deploy > Manage deployments > Edit > New version)
+ *    any time you change this code.
+ */
+
+function doGet(e) {
+  // e is undefined if you hit "Run" in the editor instead of calling the
+  // deployed /exec URL. Guard against that so it fails gracefully.
+  const params = (e && e.parameter) ? e.parameter : {};
+  const id = (params.id || '').trim();
+
+  const out = ContentService.createTextOutput().setMimeType(ContentService.MimeType.JSON);
+
+  if (!id || id.length < 3) {
+    return out.setContent(JSON.stringify({ found: false, error: 'No valid ID provided.' }));
+  }
+
+  // First 2 characters of the ID are the issue year, e.g. "26" -> "2026".
+  const yearPrefix = id.substring(0, 2);
+  const sheetName = '20' + yearPrefix;
+
+  const sheet = SpreadsheetApp.getActiveSpreadsheet().getSheetByName(sheetName);
+  if (!sheet) {
+    return out.setContent(JSON.stringify({
+      found: false,
+      error: 'No records for year 20' + yearPrefix + '.'
+    }));
+  }
+
+  const data = sheet.getDataRange().getValues();
+  const h = data[0].map(x => String(x).trim());
+
+  const idI = h.indexOf('ID');
+  const nameI = h.indexOf('Name');
+  const typeI = h.indexOf('CertificateType');
+  const dateI = h.indexOf('DateIssued');
+  const descI = h.indexOf('Description');
+  const statusI = h.indexOf('Status');
+
+  if ([idI, nameI, typeI, dateI, descI, statusI].includes(-1)) {
+    return out.setContent(JSON.stringify({ found: false, error: 'Required column missing in tab ' + sheetName + '.' }));
+  }
+
+  // Only scans rows within this one year's tab, not the whole workbook.
+  for (let i = 1; i < data.length; i++) {
+    const r = data[i];
+
+    if (String(r[idI]).trim() !== id) continue;
+
+    const date = r[dateI] instanceof Date
+      ? Utilities.formatDate(r[dateI], Session.getScriptTimeZone(), 'dd MMMM yyyy')
+      : String(r[dateI] || '').trim();
+
+    let status = String(r[statusI] || 'Valid').trim().toLowerCase();
+    status = ['invalid', 'revoked', 'not valid'].includes(status) ? 'Not Valid' : 'Valid';
+
+    return out.setContent(JSON.stringify({
+      found: true,
+      id: String(r[idI]).trim(),
+      name: String(r[nameI] || '').trim(),
+      certificateType: String(r[typeI] || '').trim(),
+      dateIssued: date,
+      description: String(r[descI] || '').trim(),
+      status: status
+    }));
+  }
+
+  return out.setContent(JSON.stringify({ found: false, error: 'No certificate found for this ID.' }));
+}

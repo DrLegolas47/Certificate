@@ -1,0 +1,661 @@
+/* ==============================================================================
+   GCS Certificate Verification & Issuance Portal - Neumorphic Design System
+   Developed for GCS Medical College, Hospital & Research Centre / GCS Foundation
+   Color Base: #ECF0F3 | Drop Shadows: #D1D9E6 & #FFFFFF
+   ============================================================================== */
+
+:root {
+  /* Neumorphic Palette */
+  --bg-base: #ECF0F3;
+  --shadow-dark: #D1D9E6;
+  --shadow-light: #FFFFFF;
+
+  /* Typography & Brand Accents */
+  --ink: #2B3648;
+  --ink-secondary: #4A5568;
+  --muted: #718096;
+  --brand: #1A365D;
+  --brand-hover: #142a48;
+  --brand-teal: #0F5F61;
+  --brand-subtle: #E2E8F0;
+  --accent: #C88A1E;
+  --line: #D1D9E6;
+  --line-light: rgba(209, 217, 230, 0.6);
+
+  /* Status Colors */
+  --danger: #C53030;
+  --danger-light: #FED7D7;
+  --success: #276749;
+  --success-light: #C6F6D5;
+  --warning: #C05621;
+  --warning-light: #FEEBC8;
+
+  /* Neumorphic Shadows (Raised) */
+  --neu-drop-lg: 16px 16px 32px var(--shadow-dark), -16px -16px 32px var(--shadow-light);
+  --neu-drop: 10px 10px 20px var(--shadow-dark), -10px -10px 20px var(--shadow-light);
+  --neu-drop-md: 6px 6px 12px var(--shadow-dark), -6px -6px 12px var(--shadow-light);
+  --neu-drop-sm: 4px 4px 8px var(--shadow-dark), -4px -4px 8px var(--shadow-light);
+  --neu-drop-xs: 2px 2px 5px var(--shadow-dark), -2px -2px 5px var(--shadow-light);
+
+  /* Neumorphic Inset Shadows (Depressed / Input) */
+  --neu-inset: inset 4px 4px 8px var(--shadow-dark), inset -4px -4px 8px var(--shadow-light);
+  --neu-inset-lg: inset 6px 6px 14px var(--shadow-dark), inset -6px -6px 14px var(--shadow-light);
+  --neu-inset-sm: inset 2px 2px 5px var(--shadow-dark), inset -2px -2px 5px var(--shadow-light);
+
+  /* Radii */
+  --radius-sm: 8px;
+  --radius-md: 14px;
+  --radius-lg: 20px;
+  --radius-xl: 28px;
+  --radius-pill: 50px;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+body {
+  margin: 0;
+  color: var(--ink);
+  background: var(--bg-base);
+  font: 14px/1.5 'Inter', ui-sans-serif, system-ui, -apple-system, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  min-height: 100vh;
+}
+
+button, input, select, textarea {
+  font: inherit;
+}
+
+/* ==============================================================================
+   TYPOGRAPHY & UTILITIES
+   ============================================================================== */
+h1, h2, h3, h4, h5 {
+  color: var(--brand);
+  margin: 0 0 8px 0;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+p {
+  margin: 0 0 12px 0;
+  color: var(--ink-secondary);
+}
+
+.mono {
+  font-family: 'JetBrains Mono', monospace;
+}
+
+/* ==============================================================================
+   BUTTONS (Tactile Neumorphic Controls)
+   ============================================================================== */
+button, .btn {
+  cursor: pointer;
+  border: 0;
+  border-radius: var(--radius-pill);
+  background: var(--bg-base);
+  color: var(--brand);
+  padding: 8px 18px;
+  font-weight: 600;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  box-shadow: var(--neu-drop-sm);
+  transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+  outline: none;
+  user-select: none;
+  text-decoration: none;
+}
+
+button:hover, .btn:hover {
+  box-shadow: var(--neu-drop-md);
+  transform: translateY(-1px);
+  color: var(--brand-hover);
+}
+
+button:active, .btn:active {
+  box-shadow: var(--neu-inset);
+  transform: translateY(1px);
+}
+
+button.primary, .btn-primary {
+  background: var(--brand);
+  color: #FFFFFF;
+  box-shadow: 4px 4px 10px rgba(26, 54, 93, 0.35), -4px -4px 10px #FFFFFF;
+}
+
+button.primary:hover, .btn-primary:hover {
+  background: var(--brand-hover);
+  color: #FFFFFF;
+  box-shadow: 6px 6px 14px rgba(26, 54, 93, 0.45);
+}
+
+button.primary:active, .btn-primary:active {
+  box-shadow: inset 3px 3px 6px rgba(0, 0, 0, 0.4);
+}
+
+button.danger {
+  color: var(--danger);
+}
+
+button.danger:hover {
+  background: #FFF5F5;
+  color: #9B2C2C;
+}
+
+button.success {
+  color: var(--success);
+}
+
+button.success:hover {
+  background: #F0FFF4;
+}
+
+button.sm {
+  padding: 5px 12px;
+  font-size: 12px;
+}
+
+button.icon-btn {
+  padding: 8px;
+  width: 36px;
+  height: 36px;
+  border-radius: 50%;
+}
+
+button:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+  pointer-events: none;
+}
+
+/* ==============================================================================
+   FORM INPUTS
+   ============================================================================== */
+label {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  font-weight: 600;
+  font-size: 13px;
+  color: var(--ink-secondary);
+  margin-bottom: 14px;
+}
+
+input, select, textarea {
+  border: 1px solid transparent;
+  outline: none;
+  background: var(--bg-base);
+  box-shadow: var(--neu-inset);
+  padding: 10px 14px;
+  border-radius: var(--radius-md);
+  color: var(--ink);
+  transition: all 0.2s ease;
+  width: 100%;
+}
+
+input:focus, select:focus, textarea:focus {
+  border-color: rgba(26, 54, 93, 0.3);
+  box-shadow: var(--neu-inset-lg);
+}
+
+/* ==============================================================================
+   CARDS & CONTAINERS
+   ============================================================================== */
+.neu-card {
+  background: var(--bg-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--neu-drop);
+  padding: 24px;
+  border: 1px solid rgba(255, 255, 255, 0.6);
+  margin-bottom: 24px;
+}
+
+.neu-panel {
+  background: var(--bg-base);
+  border-radius: var(--radius-md);
+  box-shadow: var(--neu-drop-sm);
+  padding: 18px;
+}
+
+/* ==============================================================================
+   HEADER & NAVIGATION
+   ============================================================================== */
+.top-nav {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 14px 28px;
+  background: var(--bg-base);
+  box-shadow: 0 4px 15px var(--shadow-dark);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+  gap: 16px;
+  flex-wrap: wrap;
+}
+
+.nav-brand {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.nav-logo {
+  height: 44px;
+  width: auto;
+  border-radius: 6px;
+  box-shadow: var(--neu-drop-xs);
+}
+
+.brand-text-wrap {
+  display: flex;
+  flex-direction: column;
+}
+
+.brand-title {
+  font-size: 16px;
+  font-weight: 750;
+  color: var(--brand);
+  line-height: 1.2;
+}
+
+.brand-sub {
+  font-size: 11px;
+  font-weight: 500;
+  color: var(--muted);
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.nav-search-wrap {
+  flex: 1;
+  max-width: 360px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.nav-actions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+.nav-tabs {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 22px;
+  border-bottom: 1px solid var(--line);
+  padding-bottom: 12px;
+  flex-wrap: wrap;
+}
+
+.nav-tab-btn {
+  border-radius: var(--radius-pill);
+  padding: 8px 18px;
+  font-size: 13px;
+  font-weight: 600;
+  background: var(--bg-base);
+  box-shadow: var(--neu-drop-sm);
+  color: var(--ink-secondary);
+}
+
+.nav-tab-btn.active {
+  box-shadow: var(--neu-inset);
+  color: var(--brand);
+  font-weight: 700;
+}
+
+/* ==============================================================================
+   BADGES & STATUS PILLS
+   ============================================================================== */
+.badge {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 11px;
+  font-weight: 700;
+  padding: 4px 10px;
+  border-radius: 20px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.badge.valid {
+  color: var(--success);
+  background: var(--success-light);
+  box-shadow: inset 1px 1px 3px rgba(39, 103, 73, 0.2);
+}
+
+.badge.revoked, .badge.invalid {
+  color: var(--danger);
+  background: var(--danger-light);
+  box-shadow: inset 1px 1px 3px rgba(197, 48, 48, 0.2);
+}
+
+.badge.role-super {
+  color: #6B46C1;
+  background: #E9D8FD;
+}
+
+.badge.role-admin {
+  color: #2B6CB0;
+  background: #BEE3F8;
+}
+
+.badge.role-user {
+  color: #2C7A7B;
+  background: #E6FFFA;
+}
+
+/* ==============================================================================
+   DATA TABLES (Neumorphic Structured Display)
+   ============================================================================== */
+.neu-table-wrap {
+  width: 100%;
+  overflow-x: auto;
+  border-radius: var(--radius-md);
+  box-shadow: var(--neu-inset-sm);
+  background: var(--bg-base);
+  padding: 4px;
+}
+
+.neu-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 13px;
+}
+
+.neu-table th {
+  background: rgba(26, 54, 93, 0.05);
+  color: var(--brand);
+  font-weight: 700;
+  text-align: left;
+  padding: 10px 14px;
+  border-bottom: 2px solid var(--line);
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.neu-table td {
+  padding: 10px 14px;
+  border-bottom: 1px solid var(--line-light);
+  color: var(--ink);
+  vertical-align: middle;
+}
+
+.neu-table tr:hover td {
+  background: rgba(255, 255, 255, 0.6);
+}
+
+/* ==============================================================================
+   AUTHENTICATION & LOGIN SCREEN
+   ============================================================================== */
+.login-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 30px 16px;
+}
+
+.login-copy {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.login-logo {
+  height: 68px;
+  width: auto;
+  margin-bottom: 12px;
+  filter: drop-shadow(2px 4px 6px var(--shadow-dark));
+}
+
+.login-card {
+  width: 100%;
+  max-width: 440px;
+  background: var(--bg-base);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--neu-drop-lg);
+  padding: 36px 30px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.captcha-box {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+}
+
+.captcha-display {
+  flex: 1;
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 22px;
+  font-weight: 800;
+  letter-spacing: 0.35em;
+  text-align: center;
+  background: var(--bg-base);
+  box-shadow: var(--neu-inset);
+  padding: 8px 12px;
+  border-radius: var(--radius-md);
+  color: var(--brand);
+  user-select: none;
+  background-image: radial-gradient(rgba(0, 0, 0, 0.08) 15%, transparent 16%);
+  background-size: 8px 8px;
+}
+
+.form-error {
+  color: var(--danger);
+  font-size: 13px;
+  font-weight: 600;
+  margin-top: 10px;
+  text-align: center;
+}
+
+/* ==============================================================================
+   PUBLIC VERIFICATION VIEW
+   ============================================================================== */
+.verify-shell {
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 40px 18px;
+}
+
+.verify-header {
+  text-align: center;
+  margin-bottom: 24px;
+}
+
+.verify-card {
+  width: 100%;
+  max-width: 580px;
+  background: var(--bg-base);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--neu-drop-lg);
+  padding: 34px 28px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.verify-seal {
+  width: 72px;
+  height: 72px;
+  border-radius: 50%;
+  margin: 0 auto 16px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  box-shadow: var(--neu-drop-sm);
+}
+
+.verify-seal.valid {
+  background: var(--success-light);
+  color: var(--success);
+}
+
+.verify-seal.revoked {
+  background: var(--danger-light);
+  color: var(--danger);
+}
+
+.verify-seal.unknown {
+  background: #E2E8F0;
+  color: #718096;
+}
+
+.verify-seal svg {
+  width: 38px;
+  height: 38px;
+}
+
+.verify-field {
+  padding: 12px 4px;
+  border-bottom: 1px solid var(--line-light);
+}
+
+.verify-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  letter-spacing: 0.1em;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+}
+
+.verify-value {
+  font-size: 15px;
+  font-weight: 600;
+  color: var(--ink);
+  line-height: 1.4;
+  word-break: break-word;
+}
+
+.verify-id-box {
+  margin-top: 20px;
+  padding: 12px;
+  text-align: center;
+  box-shadow: var(--neu-inset-sm);
+  border-radius: var(--radius-md);
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 12px;
+  color: var(--ink-secondary);
+}
+
+/* ==============================================================================
+   QR CODE PREVIEW & COPY BOX
+   ============================================================================== */
+.qr-preview-box {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  padding: 20px;
+  background: var(--bg-base);
+  border-radius: var(--radius-lg);
+  box-shadow: var(--neu-drop-md);
+  margin: 16px 0;
+}
+
+.qr-canvas-holder {
+  background: #FFFFFF;
+  padding: 16px;
+  border-radius: 12px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.08);
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.qr-scan-label {
+  margin-top: 8px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  color: #1A365D;
+  text-transform: uppercase;
+}
+
+.qr-id-label {
+  font-family: 'JetBrains Mono', monospace;
+  font-size: 10px;
+  color: #4A5568;
+}
+
+.qr-actions {
+  display: flex;
+  gap: 12px;
+  margin-top: 16px;
+  flex-wrap: wrap;
+  justify-content: center;
+}
+
+/* ==============================================================================
+   MODALS & TOASTS
+   ============================================================================== */
+.modal-overlay {
+  position: fixed;
+  inset: 0;
+  background: rgba(43, 54, 72, 0.45);
+  backdrop-filter: blur(4px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 16px;
+  z-index: 1000;
+}
+
+.modal-content {
+  background: var(--bg-base);
+  border-radius: var(--radius-xl);
+  box-shadow: var(--neu-drop-lg);
+  width: 100%;
+  max-width: 600px;
+  max-height: 90vh;
+  overflow-y: auto;
+  padding: 28px;
+  border: 1px solid rgba(255, 255, 255, 0.8);
+}
+
+.toast {
+  position: fixed;
+  bottom: 24px;
+  right: 24px;
+  background: var(--ink);
+  color: #FFFFFF;
+  padding: 12px 20px;
+  border-radius: var(--radius-pill);
+  box-shadow: 0 8px 24px rgba(0, 0, 0, 0.25);
+  font-size: 13px;
+  font-weight: 600;
+  z-index: 2000;
+  animation: slideUp 0.25s ease-out;
+}
+
+@keyframes slideUp {
+  from { transform: translateY(20px); opacity: 0; }
+  to { transform: translateY(0); opacity: 1; }
+}
+
+/* ==============================================================================
+   RESPONSIVENESS
+   ============================================================================== */
+@media (max-width: 640px) {
+  .top-nav {
+    padding: 12px 16px;
+  }
+  .nav-search-wrap {
+    order: 3;
+    max-width: 100%;
+    width: 100%;
+  }
+  .login-card, .verify-card {
+    padding: 24px 18px;
+  }
+}
