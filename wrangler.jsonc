@@ -1,8 +1,17 @@
 {
   "$schema": "node_modules/wrangler/config-schema.json",
   "name": "verify",
+  "main": "./worker.js",
   "compatibility_date": "2026-09-08",
   "assets": {
-    "directory": "./dist"
-  }
+    "directory": "./dist",
+    "binding": "ASSETS"
+  },
+  "d1_databases": [
+    {
+      "binding": "DB",
+      "database_name": "certificate_verification",
+      "database_id": "8bae506f-d4cd-4aa8-9fc0-725387a39a4b"
+    }
+  ]
 }

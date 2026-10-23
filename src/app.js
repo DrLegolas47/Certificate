@@ -857,12 +857,20 @@ function parseCsvText(text) {
  * ==============================================================================
  */
 async function renderRegistryTab(container, session) {
+  const isSuperOrAdmin = session.user.role === ROLES.SUPER_ADMIN || session.user.role === ROLES.ADMIN;
+  const pageSize = isSuperOrAdmin ? 10 : 20;
+  const roleLabel = isSuperOrAdmin ? '10 records / page (All Users)' : '20 records / page (My Records)';
+  let currentPage = 1;
+
   container.innerHTML = `
     <div class="neu-card">
       <div style="display: flex; align-items: center; justify-content: space-between; flex-wrap: wrap; gap: 12px; margin-bottom: 16px;">
         <div>
           <h2>Certificate Registry</h2>
           <p style="margin-bottom: 0;">Browse, sort, edit details, or toggle validation status (Revoke / Reinstate).</p>
+          <span style="display: inline-block; font-size: 11px; color: var(--brand); background: rgba(0,102,153,0.08); padding: 2px 8px; border-radius: 4px; margin-top: 6px; font-weight: 600;">
+            ⚡ D1 Edge Mode: ${roleLabel}
+          </span>
         </div>
         <div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap;">
           <label style="margin-bottom: 0; display: inline-flex; flex-direction: row; align-items: center; gap: 6px;">
@@ -880,6 +888,7 @@ async function renderRegistryTab(container, session) {
             <option value="2026" ${currentYear === '2026' ? 'selected' : ''}>Year 2026</option>
             <option value="2027" ${currentYear === '2027' ? 'selected' : ''}>Year 2027</option>
             <option value="2028" ${currentYear === '2028' ? 'selected' : ''}>Year 2028</option>
+            <option value="ALL">All Years</option>
           </select>
           <button type="button" class="btn sm" id="btn-refresh-registry">↻ Refresh</button>
         </div>
@@ -888,6 +897,9 @@ async function renderRegistryTab(container, session) {
       <div id="registry-table-holder">
         <p style="color: var(--muted);">Loading records...</p>
       </div>
+
+      <!-- Pagination Footer -->
+      <div id="registry-pagination-holder" style="display: flex; justify-content: space-between; align-items: center; flex-wrap: wrap; gap: 12px; margin-top: 16px; padding-top: 12px; border-top: 1px solid var(--border);"></div>
     </div>
   `;
 
@@ -895,21 +907,27 @@ async function renderRegistryTab(container, session) {
   const sortSelect = container.querySelector('#registry-sort-select');
   const refreshBtn = container.querySelector('#btn-refresh-registry');
   const tableHolder = container.querySelector('#registry-table-holder');
+  const paginationHolder = container.querySelector('#registry-pagination-holder');
 
-  const loadData = async () => {
-    tableHolder.innerHTML = '<p style="color: var(--muted);">Loading records...</p>';
-    let list = await api.listCertificates(yearSelect.value);
+  const loadData = async (targetPage = 1) => {
+    currentPage = targetPage;
+    tableHolder.innerHTML = '<p style="color: var(--muted);">Loading records from Cloudflare D1...</p>';
+    paginationHolder.innerHTML = '';
+
+    const res = await api.listCertificates(yearSelect.value, currentPage);
+    const list = res.certificates || [];
+    const pagination = res.pagination || { page: 1, limit: pageSize, total: list.length, totalPages: 1 };
 
     if (!list || list.length === 0) {
       tableHolder.innerHTML = `
         <div class="neu-panel" style="text-align: center; color: var(--muted); padding: 30px;">
-          No certificates found for year ${yearSelect.value}.
+          No certificates found for year ${yearSelect.value} (Page ${currentPage}).
         </div>
       `;
       return;
     }
 
-    // Apply Sorting
+    // Apply Client Sorting to current page slice
     const [field, order] = sortSelect.value.split('_');
     list.sort((a, b) => {
       let valA = String(a[field] || '').toLowerCase();
@@ -951,6 +969,7 @@ async function renderRegistryTab(container, session) {
                 </td>
                 <td style="text-align: right; white-space: nowrap;">
                   <button type="button" class="btn sm btn-view-qr" data-id="${esc(c.id)}" title="View QR and Details">QR / Link</button>
+                  <button type="button" class="btn sm btn-view-audit" data-id="${esc(c.id)}" title="View Audit Trail">History</button>
                   <button type="button" class="btn sm btn-edit-cert" data-id="${esc(c.id)}" title="Edit Details">Edit</button>
                   <button type="button" class="btn sm ${String(c.status).toLowerCase() === 'revoked' ? 'success' : 'danger'} btn-toggle-status" data-id="${esc(c.id)}" data-status="${esc(c.status || 'Valid')}">
                     ${String(c.status).toLowerCase() === 'revoked' ? 'Reinstate' : 'Revoke'}
@@ -966,6 +985,32 @@ async function renderRegistryTab(container, session) {
       </div>
     `;
 
+    // Render Pagination Controls
+    const startIdx = (pagination.page - 1) * pagination.limit + 1;
+    const endIdx = Math.min(pagination.page * pagination.limit, pagination.total);
+
+    paginationHolder.innerHTML = `
+      <div style="font-size: 13px; color: var(--muted);">
+        Showing <strong>${startIdx}–${endIdx}</strong> of <strong>${pagination.total}</strong> records (Page ${pagination.page} of ${pagination.totalPages})
+      </div>
+      <div style="display: flex; gap: 8px; align-items: center;">
+        <button type="button" class="btn sm" id="btn-page-prev" ${pagination.page <= 1 ? 'disabled' : ''}>
+          ◀ Prev
+        </button>
+        <span style="font-size: 12px; font-weight: 600; padding: 0 4px;">
+          ${pagination.page} / ${pagination.totalPages}
+        </span>
+        <button type="button" class="btn sm" id="btn-page-next" ${pagination.page >= pagination.totalPages ? 'disabled' : ''}>
+          Next ▶
+        </button>
+      </div>
+    `;
+
+    const prevBtn = paginationHolder.querySelector('#btn-page-prev');
+    const nextBtn = paginationHolder.querySelector('#btn-page-next');
+    if (prevBtn) prevBtn.addEventListener('click', () => loadData(currentPage - 1));
+    if (nextBtn) nextBtn.addEventListener('click', () => loadData(currentPage + 1));
+
     // Header sort clicks
     tableHolder.querySelectorAll('th[data-sort]').forEach(th => {
       th.addEventListener('click', () => {
@@ -973,11 +1018,11 @@ async function renderRegistryTab(container, session) {
         const [currField, currOrder] = sortSelect.value.split('_');
         const nextOrder = (currField === targetField && currOrder === 'asc') ? 'desc' : 'asc';
         sortSelect.value = `${targetField}_${nextOrder}`;
-        loadData();
+        loadData(currentPage);
       });
     });
 
-    // Bind Action Buttons
+    // Action: View QR
     tableHolder.querySelectorAll('.btn-view-qr').forEach(btn => {
       btn.addEventListener('click', () => {
         const id = btn.getAttribute('data-id');
@@ -986,14 +1031,30 @@ async function renderRegistryTab(container, session) {
       });
     });
 
-    tableHolder.querySelectorAll('.btn-edit-cert').forEach(btn => {
-      btn.addEventListener('click', () => {
+    // Action: View Audit History
+    tableHolder.querySelectorAll('.btn-view-audit').forEach(btn => {
+      btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        const cert = list.find(item => item.id === id);
-        if (cert) openEditModal(cert, loadData);
+        const full = await api.getCertificate(id);
+        if (full) openAuditModal(full);
+        else showToast('Could not load audit history');
       });
     });
 
+    // Action: Edit
+    tableHolder.querySelectorAll('.btn-edit-cert').forEach(btn => {
+      btn.addEventListener('click', async () => {
+        const id = btn.getAttribute('data-id');
+        const full = await api.getCertificate(id);
+        if (full) openEditModal(full, () => loadData(currentPage));
+        else {
+          const cert = list.find(item => item.id === id);
+          if (cert) openEditModal(cert, () => loadData(currentPage));
+        }
+      });
+    });
+
+    // Action: Status Toggle
     tableHolder.querySelectorAll('.btn-toggle-status').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
@@ -1004,16 +1065,16 @@ async function renderRegistryTab(container, session) {
           btn.disabled = true;
           await api.updateStatus(id, next);
           showToast(`Status updated to ${next}!`);
-          loadData();
+          loadData(currentPage);
         }
       });
     });
 
-    // Delete (Super Admin only)
+    // Action: Delete (Super Admin only)
     tableHolder.querySelectorAll('.btn-delete-cert').forEach(btn => {
       btn.addEventListener('click', async () => {
         const id = btn.getAttribute('data-id');
-        if (confirm(`⚠️ PERMANENTLY DELETE certificate ${id}?\n\nThis action CANNOT be undone. The record will be removed from Google Sheets.\n\nType YES in the next prompt to confirm.`)) {
+        if (confirm(`⚠️ PERMANENTLY DELETE certificate ${id}?\n\nThis action CANNOT be undone. The record will be removed from Cloudflare D1.\n\nType YES in the next prompt to confirm.`)) {
           const confirmation = prompt('Type YES to confirm permanent deletion:');
           if (confirmation && confirmation.trim().toUpperCase() === 'YES') {
             btn.disabled = true;
@@ -1021,7 +1082,7 @@ async function renderRegistryTab(container, session) {
             try {
               await api.deleteCertificate(id);
               showToast(`Certificate ${id} permanently deleted.`);
-              loadData();
+              loadData(currentPage);
             } catch (err) {
               alert('Delete failed: ' + err.message);
               btn.disabled = false;
@@ -1033,10 +1094,51 @@ async function renderRegistryTab(container, session) {
     });
   };
 
-  yearSelect.addEventListener('change', loadData);
-  sortSelect.addEventListener('change', loadData);
-  refreshBtn.addEventListener('click', loadData);
-  loadData();
+  yearSelect.addEventListener('change', () => loadData(1));
+  sortSelect.addEventListener('change', () => loadData(1));
+  refreshBtn.addEventListener('click', () => loadData(currentPage));
+  loadData(1);
+}
+
+function openAuditModal(cert) {
+  let trail = [];
+  try {
+    trail = typeof cert.auditTrail === 'string' ? JSON.parse(cert.auditTrail || '[]') : (cert.auditTrail || []);
+  } catch (e) {
+    trail = [];
+  }
+
+  openModal(`
+    <div style="display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px;">
+      <h3 style="margin: 0;">Audit History: ${esc(cert.id)}</h3>
+      <button type="button" class="btn sm modal-close-btn">✕</button>
+    </div>
+    <div style="max-height: 400px; overflow-y: auto;">
+      <p style="font-size: 13px; color: var(--muted); margin-bottom: 14px;">
+        Recipient: <strong>${esc(cert.recipientName)}</strong> | Type: <strong>${esc(cert.certificateType)}</strong>
+      </p>
+      ${trail.length === 0 ? `
+        <p style="color: var(--muted); text-align: center; padding: 20px;">No audit logs recorded for this entry.</p>
+      ` : `
+        <div style="display: flex; flex-direction: column; gap: 10px;">
+          ${trail.map(t => `
+            <div style="padding: 10px 14px; background: rgba(0,0,0,0.03); border-left: 3px solid var(--brand); border-radius: 4px;">
+              <div style="display: flex; justify-content: space-between; font-size: 12px; font-weight: 600; margin-bottom: 4px;">
+                <span class="badge ${t.action === 'REVOKED' ? 'revoked' : 'valid'}">${esc(t.action)}</span>
+                <span style="color: var(--muted);">${new Date(t.timestamp).toLocaleString()}</span>
+              </div>
+              <div style="font-size: 12px; color: var(--text);">
+                User: <strong>${esc(t.user || 'Staff')}</strong> ${t.details ? `— ${esc(t.details)}` : ''}
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `}
+    </div>
+    <div style="display: flex; justify-content: flex-end; margin-top: 16px;">
+      <button type="button" class="btn modal-close-btn">Close</button>
+    </div>
+  `);
 }
 
 /**
