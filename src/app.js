@@ -1151,10 +1151,56 @@ async function renderSettingsTab(container, session) {
   const users = await api.getUsers();
 
   container.innerHTML = `
-    <!-- Institutional Branding -->
+    <!-- Database Architecture Overview -->
+    <div class="neu-card" style="border-left: 4px solid var(--brand);">
+      <div style="display: flex; justify-content: space-between; align-items: flex-start; flex-wrap: wrap; gap: 12px;">
+        <div>
+          <h2 style="margin-bottom: 4px;">Database Architecture &amp; Mirror Status</h2>
+          <p style="margin-bottom: 0;">Cloudflare D1 serves all verification queries instantly at the edge, while Google Sheets acts as a live spreadsheet mirror and backup.</p>
+        </div>
+        <div style="display: flex; gap: 8px; flex-wrap: wrap;">
+          <span style="font-size: 11px; background: rgba(0, 168, 104, 0.12); color: #00875a; padding: 4px 10px; border-radius: 6px; font-weight: 600;">
+            ✓ D1 Primary: Active (certificate_verification)
+          </span>
+          <span style="font-size: 11px; background: rgba(0, 102, 153, 0.12); color: var(--brand); padding: 4px 10px; border-radius: 6px; font-weight: 600;">
+            ⇄ Google Sheets: Live Mirror
+          </span>
+        </div>
+      </div>
+
+      <div style="display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 14px; margin-top: 18px;">
+        <div class="neu-panel" style="padding: 14px;">
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">⚡ Cloudflare D1 (Primary Engine)</div>
+          <p style="font-size: 12px; color: var(--muted); margin-bottom: 0;">
+            Handles public verification in &lt;20ms. Paginated registry (20/page for Users, 10/page for Admins). Single-cell embedded audit trail.
+          </p>
+        </div>
+        <div class="neu-panel" style="padding: 14px;">
+          <div style="font-weight: 600; font-size: 13px; margin-bottom: 4px;">📊 Google Sheets (Live Mirror)</div>
+          <p style="font-size: 12px; color: var(--muted); margin-bottom: 0;">
+            All creations and edits are automatically mirrored to your Google Drive spreadsheet in the background for manual viewing and audits.
+          </p>
+        </div>
+      </div>
+
+      <!-- Two-Way Synchronization Controls -->
+      <div style="display: flex; gap: 10px; margin-top: 16px; flex-wrap: wrap;">
+        <button type="button" class="btn primary sm" id="btn-pull-sheets-to-d1">
+          📥 Pull / Sync Google Sheet Records into D1
+        </button>
+        <button type="button" class="btn sm" id="btn-push-d1-to-sheets">
+          ⬆ Push All D1 Records to Google Sheet Mirror
+        </button>
+        <button type="button" class="btn sm" id="btn-test-script">
+          🔌 Test Google Sheet Mirror Connection
+        </button>
+      </div>
+    </div>
+
+    <!-- Institutional Branding & Configuration -->
     <div class="neu-card">
       <h2>System Settings &amp; Institutional Branding</h2>
-      <p>Configure dynamic header branding, verification URL prefix, and backend linking.</p>
+      <p>Configure dynamic header branding, verification URL prefix, and Google Sheet mirror webhook.</p>
 
       <form id="settings-form" style="display: grid; grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); gap: 16px; margin-top: 20px;">
         <label style="grid-column: 1 / -1;">
@@ -1169,7 +1215,7 @@ async function renderSettingsTab(container, session) {
 
         <label style="grid-column: 1 / -1;">
           Public Verification Base URL (Prefix URL for QR code encoding) *
-          <input type="url" name="PREFIX_URL" value="${esc(cfg.PREFIX_URL || '')}" required placeholder="e.g. https://verify.gcsmc.org/?id=">
+          <input type="url" name="PREFIX_URL" value="${esc(cfg.PREFIX_URL || '')}" required placeholder="e.g. https://verify.jaydeep-ghevariya.workers.dev/?id=">
         </label>
 
         <label>
@@ -1178,22 +1224,20 @@ async function renderSettingsTab(container, session) {
         </label>
 
         <label>
-          Google Apps Script Web App URL (/exec)
-          <input type="url" id="script-url-input" value="${esc(api.getScriptUrl())}" placeholder="Paste Apps Script /exec URL here">
+          Google Sheet Mirror Web App URL (/exec)
+          <input type="url" id="script-url-input" value="${esc(api.getScriptUrl())}" placeholder="Paste Google Apps Script /exec URL here">
         </label>
 
         <div style="grid-column: 1 / -1; display: flex; gap: 12px; margin-top: 10px; flex-wrap: wrap;">
           <button type="submit" class="btn primary" style="padding: 10px 24px;">Save Settings</button>
-          <button type="button" class="btn" id="btn-test-script">Test Backend Connection</button>
-          <button type="button" class="btn" id="btn-sync-offline">Sync Offline Records to Google Sheets</button>
         </div>
       </form>
     </div>
 
-    <!-- Google Sheets Master File & Apps Script Generator (Super Admin Feature) -->
+    <!-- Google Sheets Master File & Apps Script Mirror Generator -->
     <div class="neu-card">
-      <h2>Google Sheets Backend &amp; Apps Script Generator</h2>
-      <p>Download the pre-configured master Google Sheets template or generate/copy the latest backend Apps Script code.</p>
+      <h2>Google Sheets Mirror Backend &amp; Template</h2>
+      <p>Download the pre-configured master Google Sheets template or copy the mirror backend Apps Script code.</p>
 
       <div style="display: flex; gap: 12px; margin: 18px 0; flex-wrap: wrap;">
         <a href="./assets/GCS_Master_Database_Template.xlsx" download="GCS_Master_Database_Template.xlsx" class="btn primary" style="text-decoration: none;">
@@ -1304,19 +1348,35 @@ async function renderSettingsTab(container, session) {
     }
   });
 
-  // Sync Offline Certificates to Google Sheets
-  container.querySelector('#btn-sync-offline')?.addEventListener('click', async () => {
-    const btn = container.querySelector('#btn-sync-offline');
+  // Pull from Google Sheet Mirror into D1
+  container.querySelector('#btn-pull-sheets-to-d1')?.addEventListener('click', async () => {
+    const btn = container.querySelector('#btn-pull-sheets-to-d1');
     btn.disabled = true;
-    btn.textContent = 'Syncing Records...';
+    btn.textContent = 'Syncing from Sheets...';
     try {
-      const res = await api.syncOfflineCertificates();
-      alert(`Sync finished!\nSuccessfully uploaded ${res.count} of ${res.total} certificates to Google Sheets.`);
+      const res = await api.syncGoogleSheetToD1();
+      alert(`✓ Sync Complete!\nSuccessfully imported ${res.count} certificates from Google Sheet into Cloudflare D1.`);
     } catch (err) {
       alert('Sync failed: ' + err.message);
     } finally {
       btn.disabled = false;
-      btn.textContent = 'Sync Offline Records to Google Sheets';
+      btn.textContent = '📥 Pull / Sync Google Sheet Records into D1';
+    }
+  });
+
+  // Push all D1 records to Google Sheet Mirror
+  container.querySelector('#btn-push-d1-to-sheets')?.addEventListener('click', async () => {
+    const btn = container.querySelector('#btn-push-d1-to-sheets');
+    btn.disabled = true;
+    btn.textContent = 'Pushing to Sheets...';
+    try {
+      const res = await api.syncD1ToGoogleSheet();
+      alert(`✓ Mirror Push Complete!\nSuccessfully mirrored ${res.count} D1 certificates to your Google Sheet.`);
+    } catch (err) {
+      alert('Mirror push failed: ' + err.message);
+    } finally {
+      btn.disabled = false;
+      btn.textContent = '⬆ Push All D1 Records to Google Sheet Mirror';
     }
   });
 

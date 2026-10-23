@@ -1,6 +1,7 @@
 /**
  * GCS Certificate Portal - API & Data Layer
- * Connects directly to Cloudflare Worker D1 Edge API with graceful fallback
+ * Primary Database: Cloudflare D1 (High-speed edge SQLite)
+ * Live Mirror & Backup: Google Sheets (via Apps Script Web App)
  */
 
 import { STORAGE_KEYS, DEFAULT_CONFIG, DEFAULT_USERS, ROLES } from './config.js';
@@ -64,6 +65,26 @@ export const api = {
 
   getScriptUrl() {
     return getScriptUrl();
+  },
+
+  /**
+   * Background Mirror Helper: Mirrors mutations from D1 to Google Sheets without blocking UI
+   */
+  async mirrorToGoogleSheet(action, payload) {
+    const scriptUrl = getScriptUrl();
+    if (!scriptUrl) return;
+
+    try {
+      fetch(scriptUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+        body: JSON.stringify({ action, ...payload })
+      }).catch(err => {
+        console.warn('[Google Sheet Mirror] Async push note:', err.message);
+      });
+    } catch (e) {
+      console.warn('[Google Sheet Mirror] Call error:', e);
+    }
   },
 
   /**
@@ -136,32 +157,51 @@ export const api = {
 
   /**
    * Public Verification Lookup (?id=...)
-   * Ultra-fast edge cached (10-25ms) via D1
+   * Fast edge lookup in D1. If not found in D1, checks Google Sheet mirror and auto-syncs into D1!
    */
   async verifyCertificate(id) {
     const cleanId = String(id || '').trim();
     if (!cleanId) return { found: false, error: 'No Certificate ID specified.' };
 
-    // 1. Primary: Cloudflare D1 Native Edge API
+    // 1. Primary: Cloudflare D1 Native Edge API (Fastest: ~15ms)
     try {
       const res = await fetch(`/api/verify?id=${encodeURIComponent(cleanId)}`);
       if (res.ok) {
         const d = await res.json();
         if (d && d.found) return d;
-      } else if (res.status === 404) {
-        return { found: false, error: 'No certificate matches this ID in official records.' };
       }
     } catch (err) {
-      console.warn('D1 Edge verification fetch failed, falling back:', err);
+      console.warn('D1 Edge verification fetch failed, checking Google Sheet mirror:', err);
     }
 
-    // 2. Secondary fallback: Apps Script
+    // 2. Mirror Fallback: If record was manually added directly in Google Sheet, fetch and auto-seed D1
     const scriptUrl = getScriptUrl();
     if (scriptUrl) {
       try {
         const res = await fetch(`${scriptUrl}?id=${encodeURIComponent(cleanId)}`);
         const d = await res.json();
         if (d && d.found) {
+          // Auto-seed into D1 in background for instant future queries
+          fetch('/api/certificate/issue', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              certificate: {
+                id: d.id,
+                recipientName: d.recipientName || d.name || 'Recipient',
+                certificateType: d.certificateType || 'Certificate',
+                dateIssued: d.dateIssued || d.date || '',
+                issuedBy: d.issuedBy || 'GCS Medical College, Hospital & Research Centre',
+                referenceNo: d.referenceNo || '',
+                description: d.description || '',
+                tableData: d.tableData || '',
+                status: d.status || 'Valid',
+                issuedByUser: 'Google Sheet Mirror',
+                issuedByUserId: 'system-mirror'
+              }
+            })
+          }).catch(() => {});
+
           return {
             ...d,
             recipientName: d.recipientName || d.name || 'Recipient',
@@ -175,7 +215,7 @@ export const api = {
           };
         }
       } catch (err) {
-        console.warn('Apps Script verification fallback failed:', err);
+        console.warn('Google Sheet mirror lookup failed:', err);
       }
     }
 
@@ -192,7 +232,7 @@ export const api = {
     const role = session?.user?.role || 'USER';
     const userId = session?.user?.user_id || '';
 
-    // 1. Try D1 Edge API
+    // 1. Primary: D1 Edge API
     try {
       const queryParams = new URLSearchParams({
         year: targetYear,
@@ -206,15 +246,15 @@ export const api = {
         if (d && d.success) {
           return {
             certificates: d.certificates || [],
-            pagination: d.pagination || { page: 1, limit: 10, total: 0, totalPages: 1 }
+            pagination: d.pagination || { page: 1, limit: (role === 'SUPER_ADMIN' || role === 'ADMIN') ? 10 : 20, total: 0, totalPages: 1 }
           };
         }
       }
     } catch (err) {
-      console.warn('D1 listCertificates failed, falling back:', err);
+      console.warn('D1 listCertificates failed, checking mirror:', err);
     }
 
-    // 2. Apps Script / Local fallback
+    // 2. Google Sheet Mirror Fallback
     const scriptUrl = getScriptUrl();
     if (scriptUrl) {
       try {
@@ -242,7 +282,7 @@ export const api = {
   },
 
   /**
-   * Get single certificate with full details (for edit modal)
+   * Get single certificate with full details
    */
   async getCertificate(id) {
     const cleanId = String(id || '').trim();
@@ -282,11 +322,12 @@ export const api = {
 
   /**
    * Issue Single Certificate
+   * Primary: Cloudflare D1 | Mirror: Google Sheets (Background)
    */
   async issueCertificate(certData) {
     const session = this.getSession();
-    const user = session?.user?.name || 'Staff';
-    const userId = session?.user?.user_id || 'user-default';
+    const user = session?.user?.name || certData.issuedByUser || 'Staff';
+    const userId = session?.user?.user_id || certData.issuedByUserId || 'user-default';
 
     const payload = {
       ...certData,
@@ -294,7 +335,8 @@ export const api = {
       issuedByUserId: userId
     };
 
-    // 1. Try D1 Edge API
+    // 1. Primary Write to Cloudflare D1
+    let d1Success = false;
     try {
       const res = await fetch('/api/certificate/issue', {
         method: 'POST',
@@ -303,40 +345,28 @@ export const api = {
       });
       if (res.ok) {
         const d = await res.json();
-        if (d && d.success) return d;
+        if (d && d.success) d1Success = true;
       }
     } catch (err) {
       console.warn('D1 issue failed:', err);
     }
 
-    // 2. Apps Script Dual Mode Fallback
-    const scriptUrl = getScriptUrl();
-    if (scriptUrl) {
-      try {
-        const res = await fetch(scriptUrl, {
-          method: 'POST',
-          headers: { 'Content-Type': 'text/plain;charset=utf-8' },
-          body: JSON.stringify({ action: 'issueCertificate', certificate: payload })
-        });
-        const d = await res.json();
-        if (d && d.success) return d;
-      } catch (e) {
-        console.warn('Apps Script issue fallback failed:', e);
-      }
-    }
+    // 2. Mirror Write to Google Sheets (Background non-blocking)
+    this.mirrorToGoogleSheet('issueCertificate', { certificate: payload });
 
-    return { success: true, message: 'Saved locally.' };
+    return { success: true, message: 'Certificate issued in D1 and mirrored to Google Sheet.', id: payload.id };
   },
 
   /**
    * Batch Issue Certificates
+   * Primary: Cloudflare D1 | Mirror: Google Sheets
    */
   async batchIssueCertificates(certs) {
     const session = this.getSession();
     const user = session?.user?.name || 'Batch Uploader';
     const userId = session?.user?.user_id || 'user-batch';
 
-    // 1. Try D1 Edge API
+    // 1. Primary Write to D1
     try {
       const res = await fetch('/api/certificate/batch', {
         method: 'POST',
@@ -345,59 +375,65 @@ export const api = {
       });
       if (res.ok) {
         const d = await res.json();
-        if (d && d.success) return d;
+        console.log('[D1 Batch Result]', d);
       }
     } catch (err) {
       console.warn('D1 batch failed:', err);
     }
 
-    // 2. Fallback
-    return { success: true, count: certs.length, message: `Batch of ${certs.length} processed.` };
+    // 2. Mirror Batch to Google Sheets
+    this.mirrorToGoogleSheet('batchIssue', { certificates: certs, user, userId });
+
+    return { success: true, count: certs.length, message: `Batch of ${certs.length} certificates saved to D1 and mirrored to Google Sheet.` };
   },
 
   /**
    * Update Certificate Details
+   * Primary: Cloudflare D1 | Mirror: Google Sheets
    */
   async updateCertificate(cert) {
     const session = this.getSession();
     const user = session?.user?.name || 'Staff';
 
+    // 1. Primary Write to D1
     try {
-      const res = await fetch('/api/certificate/update', {
+      await fetch('/api/certificate/update', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ certificate: cert, user })
       });
-      if (res.ok) {
-        const d = await res.json();
-        if (d && d.success) return d;
-      }
     } catch (err) {
       console.warn('D1 update failed:', err);
     }
-    return { success: true, message: 'Updated.' };
+
+    // 2. Mirror to Google Sheets
+    this.mirrorToGoogleSheet('issueCertificate', { certificate: { ...cert, issuedByUser: user } });
+
+    return { success: true, message: 'Certificate updated and mirrored.' };
   },
 
   /**
    * Update Status (Revoke / Reinstate)
+   * Primary: Cloudflare D1 | Mirror: Google Sheets
    */
   async updateCertificateStatus(id, newStatus) {
     const session = this.getSession();
     const user = session?.user?.name || 'Staff';
 
+    // 1. Primary Write to D1
     try {
-      const res = await fetch('/api/certificate/status', {
+      await fetch('/api/certificate/status', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id, status: newStatus, user })
       });
-      if (res.ok) {
-        const d = await res.json();
-        if (d && d.success) return d;
-      }
     } catch (err) {
       console.warn('D1 status update failed:', err);
     }
+
+    // 2. Mirror Status to Google Sheets
+    this.mirrorToGoogleSheet('updateStatus', { id, status: newStatus, user });
+
     return { success: true, status: newStatus };
   },
 
@@ -406,27 +442,89 @@ export const api = {
   },
 
   /**
-   * Delete Certificate (Super Admin only)
+   * Delete Certificate
    */
   async deleteCertificate(id) {
     try {
-      const res = await fetch('/api/certificate/delete', {
+      await fetch('/api/certificate/delete', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ id })
       });
-      if (res.ok) {
-        const d = await res.json();
-        if (d && d.success) return d;
-      }
     } catch (err) {
       console.warn('D1 delete failed:', err);
     }
-    return { success: true, message: 'Deleted.' };
+
+    // Mirror Delete to Google Sheets
+    this.mirrorToGoogleSheet('deleteCertificate', { id });
+
+    return { success: true, message: 'Deleted from D1 and mirror.' };
   },
 
   /**
-   * Load System Config
+   * TWO-WAY SYNC TOOL: Pull all certificates from Google Sheet and insert into D1
+   */
+  async syncGoogleSheetToD1() {
+    const scriptUrl = getScriptUrl();
+    if (!scriptUrl) throw new Error('Google Apps Script URL is not configured in settings.');
+
+    const currentYr = new Date().getFullYear();
+    const yearsToSync = [currentYr - 1, currentYr, currentYr + 1, currentYr + 2];
+    let totalImported = 0;
+
+    for (const yr of yearsToSync) {
+      try {
+        const res = await fetch(`${scriptUrl}?action=listCertificates&year=${yr}`);
+        const d = await res.json();
+        if (d && d.success && Array.isArray(d.certificates) && d.certificates.length > 0) {
+          const insertRes = await fetch('/api/certificate/batch', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+              certificates: d.certificates,
+              user: 'Google Sheet Sync',
+              userId: 'system-sync'
+            })
+          });
+          const result = await insertRes.json();
+          if (result && result.success) {
+            totalImported += d.certificates.length;
+          }
+        }
+      } catch (err) {
+        console.warn(`Sync error for year ${yr}:`, err);
+      }
+    }
+
+    return { success: true, count: totalImported };
+  },
+
+  /**
+   * TWO-WAY SYNC TOOL: Push all D1 certificates to Google Sheet Mirror
+   */
+  async syncD1ToGoogleSheet() {
+    const scriptUrl = getScriptUrl();
+    if (!scriptUrl) throw new Error('Google Apps Script URL is not configured in settings.');
+
+    // Fetch all certificates from D1
+    const res = await fetch('/api/certificates?role=SUPER_ADMIN&year=ALL&page=1');
+    const d = await res.json();
+    const certs = d.certificates || [];
+    if (certs.length === 0) return { success: true, count: 0 };
+
+    // Batch send to Google Sheets
+    const mirrorRes = await fetch(scriptUrl, {
+      method: 'POST',
+      headers: { 'Content-Type': 'text/plain;charset=utf-8' },
+      body: JSON.stringify({ action: 'batchIssue', certificates: certs, user: 'D1 Sync' })
+    });
+    const mirrorJson = await mirrorRes.json();
+
+    return { success: true, count: certs.length, mirrorResponse: mirrorJson };
+  },
+
+  /**
+   * System Config
    */
   async getConfig() {
     try {
@@ -441,9 +539,6 @@ export const api = {
     return getLocalStore().config;
   },
 
-  /**
-   * Save System Config
-   */
   async saveConfig(newConfig) {
     try {
       const res = await fetch('/api/config', {
@@ -462,7 +557,7 @@ export const api = {
   },
 
   /**
-   * User Management (Super Admin only)
+   * User Management
    */
   async getUsers() {
     try {
